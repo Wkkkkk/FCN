@@ -5,14 +5,16 @@ import pickle
 
 import TensorflowUtils as utils
 import read_MITSceneParsingData as scene_parsing
+import read_BuildingDetectionData as build_parsing
 import datetime
 import BatchDatsetReader as dataset
-# from six.moves import xrange
+
 
 FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("batch_size", "2", "batch size for training")
-tf.flags.DEFINE_string("logs_dir", "logs/", "path to logs directory")
+tf.flags.DEFINE_string("logs_dir", "well_trained_model/", "path to logs directory")
 tf.flags.DEFINE_string("data_dir", "Data_zoo/MIT_SceneParsing/", "path to dataset")
+tf.flags.DEFINE_string("img_dir", "Data_zoo/BuildingDetection/", "path to dataset")
 tf.flags.DEFINE_float("learning_rate", "1e-4", "Learning rate for Adam Optimizer")
 tf.flags.DEFINE_string("model_dir", "Model_zoo/", "Path to vgg model mat")
 tf.flags.DEFINE_bool('debug', "False", "Debug mode: True/ False")
@@ -26,6 +28,12 @@ IMAGE_SIZE = 224
 
 
 def vgg_net(weights, image):
+    """
+    重定义VGG16网络
+    :param weights:
+    :param image:
+    :return:
+    """
     layers = (
         'conv1_1', 'relu1_1', 'conv1_2', 'relu1_2', 'pool1',
 
@@ -47,8 +55,6 @@ def vgg_net(weights, image):
         kind = name[:4]
         if kind == 'conv':
             kernels, bias = weights[i][0][0][0][0]
-            # matconvnet: weights are [width, height, in_channels, out_channels]
-            # tensorflow: weights are [height, width, in_channels, out_channels]
             kernels = utils.get_variable(np.transpose(kernels, (1, 0, 2, 3)), name=name + "_w")
             bias = utils.get_variable(bias.reshape(-1), name=name + "_b")
             current = utils.conv2d_basic(current, kernels, bias)
@@ -65,8 +71,8 @@ def vgg_net(weights, image):
 
 def inference(image, keep_prob):
     """
-    Semantic segmentation network definition
-    :param image: input image. Should have values in range 0-255
+    定义语义分割网络
+    :param image:
     :param keep_prob:
     :return:
     """
@@ -107,7 +113,7 @@ def inference(image, keep_prob):
         conv8 = utils.conv2d_basic(relu_dropout7, W8, b8)
         # annotation_pred1 = tf.argmax(conv8, dimension=3, name="prediction1")
 
-        # now to upscale to actual image size
+        # 上采样至实际大小图像
         deconv_shape1 = image_net["pool4"].get_shape()
         W_t1 = utils.weight_variable([4, 4, deconv_shape1[3].value, NUM_OF_CLASSESS], name="W_t1")
         b_t1 = utils.bias_variable([deconv_shape1[3].value], name="b_t1")
@@ -165,7 +171,9 @@ def main(argv=None):
     summary_op = tf.summary.merge_all()
 
     print("Setting up image reader...")
-    train_records, valid_records = scene_parsing.read_dataset(FLAGS.data_dir)
+    train_records, valid_records = build_parsing.read_dataset(FLAGS.img_dir)
+    # train_records, valid_records = scene_parsing.read_dataset(FLAGS.data_dir)
+
     print(len(train_records))
     print(len(valid_records))
 
@@ -174,17 +182,6 @@ def main(argv=None):
     if FLAGS.mode == 'train':
         train_dataset_reader = dataset.BatchDatset(train_records, image_options)
     validation_dataset_reader = dataset.BatchDatset(valid_records, image_options)
-
-    print("Pickling ...")
-    with open("pickled_data.pkl", 'wb') as f:
-        pickle.dump([train_dataset_reader, validation_dataset_reader], f)
-
-    exit()
-
-    # with open("pickled_data.pkl", 'rb') as f:
-    #     result = pickle.load(f)
-    #     train_dataset_reader = result[0]
-    #     validation_dataset_reader = result[1]
 
     sess = tf.Session()
 
